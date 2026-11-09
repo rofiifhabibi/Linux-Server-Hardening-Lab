@@ -19,4 +19,5 @@ docker exec ubuntu-lab bash /usr/local/bin/check-hardening.sh
 ## File
 - `Dockerfile` — ubuntu polos
 - `docker-compose.yml` — jalan container (tanpa ports, privileged untuk firewall)
-- `check-hardening.sh` — checker progress hardening
+- `check-hardening.sh` — checker progress hardening (bersih, hanya PASS/FAIL tanpa clue)
+- `clues.md` — clue/panduan terpisah (tidak digabung ke checker)
