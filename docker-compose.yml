@@ -5,8 +5,4 @@ services:
     container_name: ubuntu-lab
     stdin_open: true
     tty: true
-    privileged: true
-    cap_add:
-      - SYS_ADMIN
-      - NET_ADMIN
     command: sleep infinity
