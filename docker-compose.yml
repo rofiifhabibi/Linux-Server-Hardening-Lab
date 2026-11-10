@@ -5,4 +5,11 @@ services:
     container_name: ubuntu-lab
     stdin_open: true
     tty: true
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - ./check-hardening.sh:/usr/local/bin/check-hardening.sh:ro
+      - ./clues.md:/root/clues.md:ro
     command: sleep infinity

@@ -6,7 +6,7 @@ GREEN='\033[0;32m'; RED='\033[0;31m'; NC='\033[0m'
 pass(){ TOTAL=$((TOTAL+1)); PASS=$((PASS+1)); echo -e "  ${GREEN}[PASS]${NC} $1"; }
 fail(){ TOTAL=$((TOTAL+1)); FAIL=$((FAIL+1)); echo -e "  ${RED}[FAIL]${NC} $1"; }
 section(){ echo ""; echo "===== $1 ====="; }
-get_cfg(){ local f=$1 k=$2; [ -f "$f" ] || { echo ""; return; }; grep -E "^\s*${k}\s+" "$f" 2>/dev/null | grep -vE "^\s*#" | tail -1 | awk '{print $2}'; }
+get_cfg(){ local f=$1 k=$2; [ -f "$f" ] || { echo ""; return; }; grep -E "^\s*${k}\b" "$f" 2>/dev/null | grep -vE "^\s*#" | tail -1 | sed -E 's/^[^=]+=\s*//; s/^\S+\s+//' | awk '{print $1}'; }
 has_cfg(){ local got; got=$(get_cfg "$1" "$2"); [ "$got" = "$3" ]; }
 echo "Linux Hardening Checker — $(hostname) — $(date)"
 
@@ -35,23 +35,23 @@ if [ -f "$SMB" ]; then
   grep -E "^\s*map to guest" $SMB | grep -qi "never" && pass "SMB2 map to guest never" || fail "SMB2 map to guest never"
   grep -E "^\s*guest ok|^\s*guest account" $SMB | grep -qi "yes" && fail "SMB2 guest ok no" || pass "SMB2 guest ok no"
   grep -E "^\s*server signing" $SMB | grep -qi "mandatory\|required" && pass "SMB3 signing mandatory" || fail "SMB3 signing mandatory"
-  grep -E "^\s*server encrypt" $SMB | grep -qi "mandatory\|required" && pass "SMB4 encrypt mandatory" || fail "SMB4 encrypt mandatory"
+  grep -E "^\s*(smb|server) encrypt" $SMB | grep -qi "mandatory\|required" && pass "SMB4 encrypt mandatory" || fail "SMB4 encrypt mandatory"
   grep -E "^\s*log (level|file|syslog)" $SMB | grep -qi . && pass "SMB5 logging" || fail "SMB5 logging"
 else fail "SMB config exists"; fi
 
 section "4. Web"
-grep -rqE "server_tokens\s+off" /etc/nginx/ 2>/dev/null && pass "WEB1 server_tokens off" || fail "WEB1 server_tokens off"
-grep -rqE "limit_except\s+(GET|POST|HEAD|OPTIONS)" /etc/nginx/sites-enabled/ /etc/nginx/nginx.conf 2>/dev/null && pass "WEB2 block TRACE/PUT/DELETE" || fail "WEB2 block TRACE/PUT/DELETE"
-grep -rqE "autoindex\s+off" /etc/nginx/ 2>/dev/null && pass "WEB3 autoindex off" || fail "WEB3 autoindex off"
-grep -rqE "access_log\s+" /etc/nginx/ 2>/dev/null && grep -rqE "error_log\s+" /etc/nginx/ 2>/dev/null && pass "WEB4 logs active" || fail "WEB4 logs active"
-grep -rqE "location.*\.(passwd|etc)|deny.*etc|try_files" /etc/nginx/ 2>/dev/null || grep -rqE "root\s+/var/www" /etc/nginx/ 2>/dev/null; [ $? -eq 0 ] && pass "WEB5 block outside web root" || fail "WEB5 block outside web root"
+grep -RqE "server_tokens\s+off" /etc/nginx/ 2>/dev/null && pass "WEB1 server_tokens off" || fail "WEB1 server_tokens off"
+grep -RqE "limit_except\s+(GET|POST|HEAD|OPTIONS)" /etc/nginx/sites-enabled/ /etc/nginx/nginx.conf 2>/dev/null && pass "WEB2 block TRACE/PUT/DELETE" || fail "WEB2 block TRACE/PUT/DELETE"
+grep -RqE "autoindex\s+off" /etc/nginx/ 2>/dev/null && pass "WEB3 autoindex off" || fail "WEB3 autoindex off"
+grep -RqE "access_log\s+" /etc/nginx/ 2>/dev/null && grep -RqE "error_log\s+" /etc/nginx/ 2>/dev/null && pass "WEB4 logs active" || fail "WEB4 logs active"
+grep -RqE "location.*\.(passwd|etc)|deny.*etc|try_files" /etc/nginx/ 2>/dev/null || grep -RqE "root\s+/var/www" /etc/nginx/ 2>/dev/null; [ $? -eq 0 ] && pass "WEB5 block outside web root" || fail "WEB5 block outside web root"
 
 section "5. User Management"
 USERS="root ubuntu nfsuser guest staff"
 if [ -f /etc/security/pwquality.conf ]; then
-  MINLEN=$(get_cfg /etc/security/pwquality.conf minlen); [ -z "$MINLEN" ] && MINLEN=$(grep -E "^\s*minlen" /etc/security/pwquality.conf | tail -1 | awk '{print $2}')
+  MINLEN=$(get_cfg /etc/security/pwquality.conf minlen)
   [ "${MINLEN:-0}" -ge 10 ] 2>/dev/null && pass "USER2 minlen" || fail "USER2 minlen"
-  for k in dcredit ucredit lcredit ocredit; do V=$(grep -E "^\s*$k\s+" /etc/security/pwquality.conf | grep -vE "^\s*#" | tail -1 | awk '{print $2}'); [ "${V:--0}" -le -1 ] 2>/dev/null && pass "USER2 $k" || fail "USER2 $k"; done
+  for k in dcredit ucredit lcredit ocredit; do V=$(get_cfg /etc/security/pwquality.conf $k); [ "${V:-0}" -le -1 ] 2>/dev/null && pass "USER2 $k" || fail "USER2 $k"; done
 else fail "USER2 pwquality.conf"; fi
 grep -rq "pam_pwquality" /etc/pam.d/ 2>/dev/null && pass "USER2 pam_pwquality" || fail "USER2 pam_pwquality"
 for U in $USERS; do
@@ -67,8 +67,14 @@ section "6. Firewall"
 if command -v ufw >/dev/null 2>&1; then
   ufw status 2>/dev/null | head -1 | grep -qi "Status: active" && pass "FW1 ufw active" || fail "FW1 ufw active"
   ufw status verbose 2>/dev/null | grep -i "Default:" | head -1 | grep -qi "deny (incoming)" && pass "FW2 default deny incoming" || fail "FW2 default deny incoming"
-  for svc in "22" "80" "443" "2049" "445"; do ufw status 2>/dev/null | grep -qE "^\s*$svc" && pass "FW allow $svc" || fail "FW allow $svc"; done
-else fail "FW ufw installed"; fi
+  UFW_S=$(ufw status 2>/dev/null)
+  echo "$UFW_S" | grep -qE '(^|[[:space:]])(22(/tcp)?|OpenSSH)([[:space:]]|$)' && pass "FW allow SSH (22)" || fail "FW allow SSH (22)"
+  echo "$UFW_S" | grep -qE '(^|[[:space:]])((80|443)(/tcp)?|Nginx|WWW|Apache)([[:space:]]|$)' && pass "FW allow Web (80/443)" || fail "FW allow Web (80/443)"
+  echo "$UFW_S" | grep -qE '(^|[[:space:]])(2049(/tcp)?|nfs)([[:space:]]|$)' && pass "FW allow NFS (2049)" || fail "FW allow NFS (2049)"
+  echo "$UFW_S" | grep -qE '(^|[[:space:]])(445(/tcp)?|samba|Samba)([[:space:]]|$)' && pass "FW allow SMB/Samba (445)" || fail "FW allow SMB/Samba (445)"
+else
+  fail "FW1 ufw active"; fail "FW2 default deny incoming"; fail "FW allow SSH (22)"; fail "FW allow Web (80/443)"; fail "FW allow NFS (2049)"; fail "FW allow SMB/Samba (445)"
+fi
 
 echo ""; echo "=================================================="
 echo -e "SKOR: ${GREEN}$PASS PASS${NC} / ${RED}$FAIL FAIL${NC} / total $TOTAL"
